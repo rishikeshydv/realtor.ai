@@ -1,57 +1,55 @@
 package db
 
 import (
-	"context"
-	"database/sql"
 	"fmt"
 	"log"
-	"net"
 	"os"
+	"strconv"
 
-	"cloud.google.com/go/cloudsqlconn"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/joho/godotenv"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-func DBConnect() (*sql.DB, error) {
-	mustGetenv := func(k string) string {
-		v := os.Getenv(k)
-		if v == "" {
-			log.Fatalf("Warning: %s environment variable not set.", k)
-		}
-		return v
-	}
-
-	var (
-		dbUser                 = mustGetenv("DB_IAM_USER")              // e.g. 'service-account-name@project-id.iam'
-		dbName                 = mustGetenv("DB_NAME")                  // e.g. 'my-database'
-		instanceConnectionName = mustGetenv("INSTANCE_CONNECTION_NAME") // e.g. 'project:region:instance'
-		usePrivate             = os.Getenv("PRIVATE_IP")
-	)
-
-	d, err := cloudsqlconn.NewDialer(context.Background(), cloudsqlconn.WithIAMAuthN())
+func LocalDBConnect() *gorm.DB {
+	err := godotenv.Load()
 	if err != nil {
-		return nil, fmt.Errorf("cloudsqlconn.NewDialer: %w", err)
+		log.Fatal("Error loading .env file")
 	}
-	var opts []cloudsqlconn.DialOption
-	if usePrivate != "" {
-		opts = append(opts, cloudsqlconn.WithPrivateIP())
-	}
+	//getting credentials for postgresql
+	host := os.Getenv("POSTGRES_HOST")
+	database := os.Getenv("POSTGRES_DATABASE")
+	portStr := os.Getenv("POSTGRES_PORT")
+	username := os.Getenv("POSTGRES_USERNAME")
+	password := os.Getenv("POSTGRES_PASSWORD")
 
-	dsn := fmt.Sprintf("user=%s database=%s", dbUser, dbName)
-	config, err := pgx.ParseConfig(dsn)
+	// Convert port from string to integer
+	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return nil, err
+		log.Fatalf("Error converting port to integer: %v", err)
 	}
 
-	config.DialFunc = func(ctx context.Context, network, instance string) (net.Conn, error) {
-		return d.Dial(ctx, instanceConnectionName, opts...)
-	}
-	dbURI := stdlib.RegisterConnConfig(config)
-	dbPool, err := sql.Open("pgx", dbURI)
+	log.Println(host, database, port, username, password)
+
+	postgres_url := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable",
+		host, username, password, database, port)
+	db, err := gorm.Open(postgres.Open(postgres_url), &gorm.Config{})
 	if err != nil {
-		return nil, fmt.Errorf("sql.Open: %w", err)
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	log.Println("Database connection successful!")
+
+	//checking the database connection
+	postgresDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("Failed to get database instance: %v", err)
+	}
+	//ping the databases
+	err = postgresDB.Ping()
+	if err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
 	}
 
-	return dbPool, nil
+	log.Println("Ping to database successful!")
+	return db
 }

@@ -4,19 +4,22 @@ import (
 	"net/http"
 )
 
-//this function checks the header of each request if the 'Authorization' exists or not
-//use the same function to check for the protected routes
+//this function checks if the token is valid or not
+//this helps to confirm if the user is still logged in
 
-func CheckHeader(w http.ResponseWriter, r *http.Request) {
-	tokenString := r.Header.Get("Authorization")
-	if tokenString == "" {
+func CheckCookie(w http.ResponseWriter, r *http.Request) {
+	//get the cookie
+	cookie, err := r.Cookie("token")
+	if err != nil {
 		w.Write([]byte("User not logged in."))
 		return
 	}
-	tokenString = tokenString[len("Bearer "):]
+	//get the token
+	tokenString := cookie.Value
 	returnText := ParseToken(tokenString)
 	if returnText == "Failed" {
 		w.Write([]byte("User Not Logged In"))
+	} else {
+		w.Write([]byte("User Logged In"))
 	}
-	w.Write([]byte("User Successfully logged in."))
 }
